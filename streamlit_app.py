@@ -118,3 +118,112 @@ elif choice == "💳 Udhaar Records":
             c.execute("UPDATE customers SET credit = credit - ? WHERE name=?", (amt, cust))
             conn.commit()
             st.rerun()
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+import time
+
+# --- APP CONFIG ---
+st.set_page_config(page_title="Snooker Pro", layout="wide")
+st.title("🎱 Snooker Club Manager (Permanent Save)")
+
+# Session State for Timer
+if 'sessions' not in st.session_state:
+    st.session_state.sessions = {}
+
+# --- STEP 1: START GAME (Manual Table Name) ---
+st.header("1. Start Game")
+c1, c2, c3 = st.columns([2, 2, 1])
+with c1:
+    t_name = st.text_input("Table ka Name Likhen", placeholder="e.g. Table A, VIP...")
+with c2:
+    t_mins = st.number_input("Game ka Time (Minutes)", min_value=1, value=30)
+with c3:
+    st.write(" ")
+    if st.button("▶️ Start Timer"):
+        if t_name:
+            st.session_state.sessions[t_name] = {
+                "start": datetime.now(),
+                "limit": t_mins
+            }
+            st.rerun()
+        else:
+            st.error("Table Name Likhen!")
+
+st.divider()
+
+# --- STEP 2: LIVE TABLES & STOP OPTION ---
+st.header("2. Live Tables")
+if st.session_state.sessions:
+    cols = st.columns(3)
+    for i, (name, data) in enumerate(list(st.session_state.sessions.items())):
+        with cols[i % 3]:
+            st.subheader(f"📍 {name}")
+            elapsed = (datetime.now() - data["start"]).total_seconds() / 60
+            st.write(f"Time: {int(elapsed)} / {data['limit']} min")
+            
+            if st.button(f"🛑 Stop {name}", key=f"stop_{name}"):
+                st.session_state.billing_now = {
+                    "table": name,
+                    "mins": data['limit'],
+                    "elapsed": int(elapsed)
+                }
+                del st.session_state.sessions[name]
+                st.rerun()
+else:
+    st.info("Abhi koi table nahi chal rahi.")
+
+# --- STEP 3: BILLING FORM (Jo aapne maanga tha) ---
+if 'billing_now' in st.session_state:
+    st.divider()
+    st.header("3. Checkout & Manual Bill")
+    b = st.session_state.billing_now
+    
+    with st.form("bill_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write(f"**Table:** {b['table']} | **Set Time:** {b['mins']} min")
+            cust = st.text_input("Customer Name (Zaroori)")
+            g_amt = st.number_input("Game Amount (Manual)", min_value=0, value=100)
+        
+        with col2:
+            paid = st.number_input("Kitne Paise Aaye? (Paid)", min_value=0, value=0)
+            # Yahan hum snacks ko manual add kar sakte hain ya option rakh sakte hain
+            s_amt = st.number_input("Saman ka Paisa (Snacks)", min_value=0, value=0)
+        
+        total = g_amt + s_amt
+        credit = total - paid
+        st.markdown(f"### Total: ₹{total} | Udhaar: ₹{credit}")
+        
+        if st.form_submit_button("✅ Save Record Permanently"):
+            if cust:
+                # DATA STRUCTURE
+                new_data = {
+                    "Date": [datetime.now().strftime("%Y-%m-%d")],
+                    "Time": [datetime.now().strftime("%H:%M")],
+                    "Table_Name": [b['table']],
+                    "Minutes": [b['mins']],
+                    "Customer": [cust],
+                    "Game_Amt": [g_amt],
+                    "Snack_Amt": [s_amt],
+                    "Total": [total],
+                    "Paid": [paid],
+                    "Credit": [credit]
+                }
+                
+                # IMPORTANT: Yahan hum data ko CSV mein save kar rahe hain backup ke liye
+                # GitHub pe hamesha ke liye save karne ke liye Google Sheets connect karni hogi.
+                # Abhi ke liye ye aapke session mein rahega jab tak app live hai.
+                
+                df = pd.DataFrame(new_data)
+                st.write("Record Ready to Save!")
+                st.dataframe(df)
+                
+                # Download button as backup (Data delete na ho isliye)
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button("💾 Download/Save Record", csv, "bill.csv", "text/csv")
+                
+                del st.session_state.billing_now
+                st.success("Bill generate ho gaya! Upar download button se save karein.")
+            else:
+                st.error("Customer ka naam likhna zaroori hai!")
